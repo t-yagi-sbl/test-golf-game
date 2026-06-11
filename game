@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ゴルフ ニアピンゲーム</title>
+    <style>
+        /* 全体のレイアウト設定 */
+        :root {
+            --bg-color: #1a252f;
+            --ui-bg: #2c3e50;
+            --accent-red: #e74c3c;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: #fff;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            /* dvh = スマホのアドレスバーを除いた実際の表示領域 */
+            height: 100dvh; 
+            overflow: hidden;
+            touch-action: none; /* ブラウザのジェスチャーを制限 */
+        }
+
+        /* ゲーム画面（上部） */
+        #game-area {
+            position: relative;
+            width: 100%;
+            flex: 1; /* 余ったスペースをすべて使う */
+            background-color: #87CEEB;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UIレイヤー（メッセージ表示など） */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #message {
+            font-size: clamp(24px, 8vw, 42px); /* 画面サイズに合わせてフォント調整 */
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px #000;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            padding: 20px;
+        }
+
+        /* 操作パネル（下部） */
+        #controls {
+            background: var(--ui-bg);
+            padding: 15px;
+            padding-bottom: calc(15px + env(safe-area-inset-bottom)); /* iPhoneのノッチ対応 */
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .info-panel {
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        #power-bar-container {
+            width: 100%;
+            height: 30px;
+            background: #1a252f;
+            border: 2px solid #7f8c8d;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #target-line {
+            position: absolute;
+            left: 83.3%; /* 150/180 = 83.3% */
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background-color: #3498db;
+            z-index: 10;
+            box-shadow: 0 0 8px #3498db;
+        }
+
+        #power-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c);
+        }
+
+        button {
+            width: 100%;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(to bottom, #e74c3c, #c0392b);
+            color: white;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-area">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui-layer">
+            <div id="message"></div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <div class="info-panel">
+            目標: 150Y / クラブ: 7i<br>
+            <strong id="score-text" style="color: #FFD700;">タップでスタート！</strong>
+        </div>
+        <div id="power-bar-container">
+            <div id="target-line"></div>
+            <div id="power-bar"></div>
+        </div>
+        <button id="action-btn">スタート</button>
+    </div>
+
+    <script>
+        const TARGET_YARD = 150; 
+        const MAX_YARD = 180;    
+        
+        let state = 'ready'; 
+        let power = 0;
+        let powerDirection = 1;
+        let hitYard = 0;
+        let flyProgress = 0;
+        let ballTargetY = 0;
+
+        let clouds = [];
+        let trees = [];
+        let trail = [];
+        let confettis = [];
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const powerBar = document.getElementById('power-bar');
+        const actionBtn = document.getElementById('action-btn');
+        const messageEl = document.getElementById('message');
+        const scoreText = document.getElementById('score-text');
+
+        function resizeCanvas() {
+            // 親要素のサイズにキャンバスを合わせる
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            initClouds();
+            initTrees();
+        }
+
+        // 初回ロードとリサイズ時に実行
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
+
+        function initClouds() {
+            clouds = [];
+            for (let i = 0; i < 4; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * (canvas.height * 0.2),
+                    speed: 0.2 + Math.random() * 0.4,
+                    scale: 0.5 + Math.random() * 0.5
+                });
+            }
+        }
+
+        function initTrees() {
+            trees = [];
+            const horizonY = canvas.height * 0.15;
+            for (let i = 0; i <= canvas.width; i += 45) {
+                trees.push({ x: i, h: 10 + Math.random() * 20 });
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            clouds.forEach(c => {
+                c.x += c.speed;
+                if (c.x > canvas.width + 50) c.x = -100;
+            });
+
+            if (state === 'power') {
+                power += 2 * powerDirection; // スマホ用に少し速めに設定
+                if (power > 100) { power = 100; powerDirection = -1; } 
+                else if (power < 0) { power = 0; powerDirection = 1; }
+                powerBar.style.width = power + '%';
+            } 
+            else if (state === 'fly') {
+                flyProgress += 0.02; 
+                if (flyProgress >= 1) {
+                    flyProgress = 1;
+                    state = 'result';
+                    showResult();
+                }
+            }
+
+            if (confettis.length > 0) {
+                confettis.forEach(c => {
+                    c.x += c.vx;
+                    c.vy += 0.4;
+                    c.y += c.vy;
+                });
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 空
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.4);
+            skyGrad.addColorStop(0, '#1E90FF'); 
+            skyGrad.addColorStop(1, '#87CEFA'); 
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 雲
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            clouds.forEach(c => {
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 20 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x + 15 * c.scale, c.y - 10 * c.scale, 15 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x + 30 * c.scale, c.y, 15 * c.scale, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            const horizonY = canvas.height * 0.2;
+            
+            // 地面
+            ctx.fillStyle = '#2E481A';
+            ctx.fillRect(0, horizonY, canvas.width, canvas.height - horizonY);
+
+            // 木々
+            ctx.fillStyle = '#003300';
+            trees.forEach(t => {
+                ctx.beginPath();
+                ctx.moveTo(t.x, horizonY + 10);
+                ctx.lineTo(t.x + 15, horizonY - t.h);
+                ctx.lineTo(t.x + 30, horizonY + 10);
+                ctx.fill();
+            });
+
+            // グリーンとピン
+            const cupY = canvas.height * 0.25;
+            const teeY = canvas.height * 0.85;
+            const greenW = canvas.width * 0.6;
+            const greenH = greenW * 0.4;
+
+            const greenGrad = ctx.createRadialGradient(canvas.width/2, cupY, 0, canvas.width/2, cupY, greenW/2);
+            greenGrad.addColorStop(0, '#228B22');
+            greenGrad.addColorStop(1, '#004d00');
+            ctx.fillStyle = greenGrad;
+            ctx.beginPath();
+            ctx.ellipse(canvas.width/2, cupY, greenW/2, greenH/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ピン
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width/2, cupY);
+            ctx.lineTo(canvas.width/2, cupY - 40);
+            ctx.stroke();
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.moveTo(canvas.width/2, cupY - 40);
+            ctx.lineTo(canvas.width/2 + 15, cupY - 32);
+            ctx.lineTo(canvas.width/2, cupY - 25);
+            ctx.fill();
+
+            // ボールの位置計算
+            let groundY = teeY;
+            if (state === 'fly' || state === 'result') {
+                groundY = teeY - (teeY - ballTargetY) * flyProgress;
+            }
+            const arcH = Math.sin(flyProgress * Math.PI) * (teeY - cupY) * 0.4;
+            const ballY = groundY - arcH;
+            const scale = 0.5 + (groundY / canvas.height) * 0.5;
+
+            // 影
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.ellipse(canvas.width/2, groundY, 8 * scale, 3 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ボール本体
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(canvas.width/2, ballY, 6 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 紙吹雪
+            confettis.forEach(c => {
+                ctx.fillStyle = c.color;
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function showResult() {
+            const diffYard = Math.abs(TARGET_YARD - hitYard);
+            if (diffYard <= 1.5) {
+                messageEl.innerHTML = "🎉 NICE ON! 🎉";
+                messageEl.style.display = "block";
+                scoreText.innerText = `ニアピン！ 残り ${diffYard.toFixed(1)}Y`;
+                for (let i = 0; i < 50; i++) {
+                    confettis.push({
+                        x: canvas.width/2, y: canvas.height*0.25,
+                        vx: (Math.random()-0.5)*10, vy: (Math.random()-1)*10,
+                        color: `hsl(${Math.random()*360}, 80%, 50%)`, size: 3+Math.random()*3
+                    });
+                }
+            } else {
+                scoreText.innerText = `残り: ${diffYard.toFixed(1)} ヤード`;
+            }
+            actionBtn.innerText = "もう一度プレイ";
+        }
+
+        function handleAction() {
+            if (state === 'ready') {
+                state = 'power';
+                power = 0;
+                messageEl.style.display = "none";
+                confettis = [];
+                scoreText.innerText = "タイミングを合わせてタップ！";
+                actionBtn.innerText = "ショット！";
+            } 
+            else if (state === 'power') {
+                state = 'fly';
+                hitYard = MAX_YARD * (power / 100);
+                const teeY = canvas.height * 0.85;
+                const cupY = canvas.height * 0.25;
+                ballTargetY = teeY - (hitYard * ((teeY - cupY) / TARGET_YARD));
+                flyProgress = 0;
+                actionBtn.innerText = "飛んでいます...";
+            }
+            else if (state === 'result') {
+                state = 'ready';
+                powerBar.style.width = '0%';
+                scoreText.innerText = "タップでスタート！";
+                actionBtn.innerText = "スタート";
+            }
+        }
+
+        // タッチとクリック両方に対応
+        actionBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            handleAction();
+        });
+
+        // 起動
+        resizeCanvas();
+        gameLoop();
+    </script>
+</body>
+</html>
