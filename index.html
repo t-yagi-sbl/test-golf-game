@@ -78,7 +78,7 @@
 
         .info-panel {
             text-align: center;
-            font-size: 15px;
+            font-size: 14px;
             line-height: 1.5;
         }
 
@@ -112,7 +112,7 @@
         button {
             width: 100%;
             padding: 18px;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             border: none;
             border-radius: 15px;
@@ -139,8 +139,8 @@
 
     <div id="controls">
         <div class="info-panel">
-            目標: 150Y / クラブ: 7番アイアン<br>
-            <strong id="score-text" style="color: #FFD700;">タップでパワー決定スタート！</strong>
+            目標: 150ヤード / クラブ: 7番アイアン<br>
+            <strong id="score-text" style="color: #FFD700;">青い線を狙ってタップ！</strong>
         </div>
         <div id="power-bar-container">
             <div id="target-line"></div>
@@ -164,6 +164,7 @@
         let clouds = [];
         let trees = [];
         let confettis = [];
+        let ballTrail = [];
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -188,18 +189,18 @@
             for (let i = 0; i < 4; i++) {
                 clouds.push({
                     x: Math.random() * canvas.width,
-                    y: Math.random() * (canvas.height * 0.2),
-                    speed: 0.3 + Math.random() * 0.5,
-                    scale: 0.6 + Math.random() * 0.6
+                    y: Math.random() * (canvas.height * 0.15),
+                    speed: 0.3 + Math.random() * 0.4,
+                    scale: 0.6 + Math.random() * 0.5
                 });
             }
         }
 
         function initTrees() {
             trees = [];
-            const horizonY = canvas.height * 0.2;
+            const horizonY = canvas.height * 0.15;
             for (let i = 0; i <= canvas.width; i += 50) {
-                trees.push({ x: i, h: 15 + Math.random() * 25 });
+                trees.push({ x: i, h: 10 + Math.random() * 15 });
             }
         }
 
@@ -216,13 +217,25 @@
             });
 
             if (state === 'power') {
-                power += 2.2 * powerDirection; 
+                power += 1.6 * powerDirection; 
                 if (power > 100) { power = 100; powerDirection = -1; } 
                 else if (power < 0) { power = 0; powerDirection = 1; }
                 powerBar.style.width = power + '%';
             } 
             else if (state === 'fly') {
                 flyProgress += 0.02; 
+
+                const centerX = canvas.width / 2;
+                const teeY = canvas.height * 0.85;
+                const cupY = canvas.height * 0.22;
+                let currentGroundY = teeY - (teeY - ballTargetY) * flyProgress;
+                let arcH = Math.sin(flyProgress * Math.PI) * (teeY - cupY) * 0.6;
+                let ballY = currentGroundY - arcH;
+                let scale = 0.35 + (currentGroundY / canvas.height) * 0.65;
+
+                ballTrail.push({x: centerX, y: ballY, s: scale});
+                if (ballTrail.length > 20) ballTrail.shift();
+
                 if (flyProgress >= 1) {
                     flyProgress = 1;
                     state = 'result';
@@ -236,111 +249,121 @@
                     c.vy += 0.35;
                     c.y += c.vy;
                 });
-                if (confettis.length > 200) confettis.splice(0, 1);
             }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 空
             const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.4);
             skyGrad.addColorStop(0, '#1E90FF'); 
             skyGrad.addColorStop(1, '#87CEFA'); 
             ctx.fillStyle = skyGrad;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 雲
             ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             clouds.forEach(c => {
                 ctx.beginPath();
-                ctx.arc(c.x, c.y, 20 * c.scale, 0, Math.PI * 2);
-                ctx.arc(c.x + 15 * c.scale, c.y - 10 * c.scale, 15 * c.scale, 0, Math.PI * 2);
-                ctx.arc(c.x + 30 * c.scale, c.y, 15 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x, c.y, 18 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x + 12 * c.scale, c.y - 8 * c.scale, 12 * c.scale, 0, Math.PI * 2);
                 ctx.fill();
             });
 
-            const horizonY = canvas.height * 0.2;
+            const horizonY = canvas.height * 0.15;
             ctx.fillStyle = '#2E481A';
             ctx.fillRect(0, horizonY, canvas.width, canvas.height - horizonY);
 
             ctx.fillStyle = '#003300';
             trees.forEach(t => {
                 ctx.beginPath();
-                ctx.moveTo(t.x, horizonY + 10);
-                ctx.lineTo(t.x + 15, horizonY - t.h);
-                ctx.lineTo(t.x + 30, horizonY + 10);
+                ctx.moveTo(t.x, horizonY + 8);
+                ctx.lineTo(t.x + 12, horizonY - t.h);
+                ctx.lineTo(t.x + 24, horizonY + 8);
                 ctx.fill();
             });
 
-            const cupY = canvas.height * 0.25;
-            const teeY = canvas.height * 0.85;
-            const greenW = canvas.width * 0.65;
-            const greenH = greenW * 0.4;
+            const centerX = canvas.width / 2;
+            const cupY = canvas.height * 0.22;   
+            const bunkerY = canvas.height * 0.55; 
+            const teeY = canvas.height * 0.85;   
+
+            // バンカー
+            const bunkerW = canvas.width * 0.12; 
+            const bunkerH = bunkerW * 0.5;
+            ctx.fillStyle = '#edc9af';
+            ctx.beginPath();
+            ctx.ellipse(centerX, bunkerY, bunkerW, bunkerH, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.stroke();
 
             // グリーン
-            const greenGrad = ctx.createRadialGradient(canvas.width/2, cupY, 0, canvas.width/2, cupY, greenW/2);
+            const greenW = canvas.width * 0.4;
+            const greenH = greenW * 0.4;
+            const greenGrad = ctx.createRadialGradient(centerX, cupY, 0, centerX, cupY, greenW/2);
             greenGrad.addColorStop(0, '#228B22');
             greenGrad.addColorStop(1, '#004d00');
             ctx.fillStyle = greenGrad;
             ctx.beginPath();
-            ctx.ellipse(canvas.width/2, cupY, greenW/2, greenH/2, 0, 0, Math.PI * 2);
+            ctx.ellipse(centerX, cupY, greenW/2, greenH/2, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // カップの穴
             ctx.fillStyle = '#111';
             ctx.beginPath();
-            ctx.ellipse(canvas.width/2, cupY, 10, 4, 0, 0, Math.PI * 2);
+            ctx.ellipse(centerX, cupY, 8, 3, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // ピン
             ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.moveTo(canvas.width/2, cupY);
-            ctx.lineTo(canvas.width/2, cupY - 45);
+            ctx.moveTo(centerX, cupY);
+            ctx.lineTo(centerX, cupY - 35);
             ctx.stroke();
             ctx.fillStyle = '#e74c3c';
             ctx.beginPath();
-            ctx.moveTo(canvas.width/2, cupY - 45);
-            ctx.lineTo(canvas.width/2 + 20, cupY - 35);
-            ctx.lineTo(canvas.width/2, cupY - 25);
+            ctx.moveTo(centerX, cupY - 35);
+            ctx.lineTo(centerX + 15, cupY - 28);
+            ctx.lineTo(centerX, cupY - 20);
             ctx.fill();
 
-            // ボールの描画
+            // 軌跡
+            ballTrail.forEach((p, i) => {
+                const alpha = (i / ballTrail.length) * 0.6;
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5 * p.s, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // ボール描画
             let currentGroundY = teeY;
             if (state === 'fly' || state === 'result') {
                 currentGroundY = teeY - (teeY - ballTargetY) * flyProgress;
             }
             
-            // 弧を描く高さ
-            let arcH = Math.sin(flyProgress * Math.PI) * (teeY - cupY) * 0.5;
+            let arcH = Math.sin(flyProgress * Math.PI) * (teeY - cupY) * 0.6;
             let ballY = currentGroundY - arcH;
             
-            // ホールインワン演出：最後の最後で穴の中に消える
             let ballOpacity = 1;
-            if (isHoleInOne && flyProgress > 0.95) {
-                ballOpacity = 1 - (flyProgress - 0.95) * 20; 
-                ballY += (flyProgress - 0.95) * 100; // 穴の下に落ちる動き
+            if (isHoleInOne && flyProgress > 0.96) {
+                ballOpacity = 1 - (flyProgress - 0.96) * 25; 
+                ballY += (flyProgress - 0.96) * 80;
             }
 
-            const scale = 0.4 + (currentGroundY / canvas.height) * 0.6;
+            const scale = 0.35 + (currentGroundY / canvas.height) * 0.65;
 
-            // 影（ホールインワンなら穴付近で消す）
             if (ballOpacity > 0) {
                 ctx.fillStyle = `rgba(0,0,0,${0.3 * ballOpacity})`;
                 ctx.beginPath();
-                ctx.ellipse(canvas.width/2, currentGroundY, 10 * scale, 4 * scale, 0, 0, Math.PI * 2);
+                ctx.ellipse(centerX, currentGroundY, 9 * scale, 3.5 * scale, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // ボール
                 ctx.fillStyle = `rgba(255,255,255,${ballOpacity})`;
                 ctx.beginPath();
-                ctx.arc(canvas.width/2, ballY, 7 * scale, 0, Math.PI * 2);
+                ctx.arc(centerX, ballY, 6.5 * scale, 0, Math.PI * 2);
                 ctx.fill();
             }
 
-            // 紙吹雪
             confettis.forEach(c => {
                 ctx.fillStyle = c.color;
                 ctx.beginPath();
@@ -351,29 +374,20 @@
 
         function showResult() {
             const diffYard = Math.abs(TARGET_YARD - hitYard);
+            let score = 0;
             let resultText = "";
-            let subText = `残り ${diffYard.toFixed(1)} ヤード`;
-            let confettiCount = 0;
-
+            let subText = "";
+            
             if (diffYard <= 1.2) {
                 isHoleInOne = true;
+                score = 10000;
                 resultText = "🎉 ホールインワン！ 🎉";
-                subText = `奇跡のショット！ (${diffYard.toFixed(2)}Y)`;
-                confettiCount = 150;
-            } else if (diffYard < 78) {
-                resultText = "⛳️ NICE ON! ⛳️";
-                subText = `ナイスオン！ 残り ${diffYard.toFixed(1)}Y`;
-                confettiCount = 50;
-            } else {
-                messageEl.style.display = "none";
-                scoreText.innerText = subText;
-            }
-
-            if (resultText !== "") {
+                subText = `残り ${diffYard.toFixed(2)}ヤード / スコア: ${score}点`;
+                
                 messageEl.innerHTML = resultText;
                 messageEl.style.display = "block";
-                scoreText.innerText = subText;
-                for (let i = 0; i < confettiCount; i++) {
+                
+                for (let i = 0; i < 150; i++) {
                     confettis.push({
                         x: canvas.width / 2,
                         y: canvas.height * 0.25,
@@ -383,7 +397,13 @@
                         size: 2 + Math.random() * 4
                     });
                 }
+            } else {
+                score = Math.floor(Math.max(0, 1000 - (diffYard * 10)));
+                messageEl.style.display = "none";
+                subText = `残り ${diffYard.toFixed(1)}ヤード / スコア: ${score}点`;
             }
+
+            scoreText.innerText = subText;
             actionBtn.innerText = "もう一度プレイ";
         }
 
@@ -394,14 +414,15 @@
                 isHoleInOne = false;
                 messageEl.style.display = "none";
                 confettis = [];
-                scoreText.innerText = "青い線のタイミングでタップ！";
+                ballTrail = [];
+                scoreText.innerText = "ベストパワーでタップ！";
                 actionBtn.innerText = "ショット！";
             } 
             else if (state === 'power') {
                 state = 'fly';
                 hitYard = MAX_YARD * (power / 100);
                 const teeY = canvas.height * 0.85;
-                const cupY = canvas.height * 0.25;
+                const cupY = canvas.height * 0.22;
                 ballTargetY = teeY - (hitYard * ((teeY - cupY) / TARGET_YARD));
                 flyProgress = 0;
                 actionBtn.innerText = "飛んでいます...";
@@ -409,9 +430,10 @@
             else if (state === 'result') {
                 state = 'ready';
                 powerBar.style.width = '0%';
-                scoreText.innerText = "タップでパワー決定スタート！";
+                scoreText.innerText = "タイミングを合わせてタップ！";
                 actionBtn.innerText = "スタート";
                 confettis = [];
+                ballTrail = [];
                 isHoleInOne = false;
             }
         }
